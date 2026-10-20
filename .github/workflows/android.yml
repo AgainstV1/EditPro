@@ -4,8 +4,11 @@ name: Build EditPro APK
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
-      - 'EditProAndroid_Native_Kotlin_Project.zip'
+      - 'app/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
       - '.github/workflows/android.yml'
 
 permissions:
@@ -14,52 +17,63 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Get project files
-        uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Install Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.7'
 
-      - name: Extract native project
+      - name: Normalize Android project folders
+        shell: bash
         run: |
-          mkdir -p /tmp/editpro
-          unzip -q EditProAndroid_Native_Kotlin_Project.zip -d /tmp/editpro
+          set -euo pipefail
 
-          PROJECT_FILE=$(find /tmp/editpro -type f -name settings.gradle.kts -print -quit)
-
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "No settings.gradle.kts found in ZIP"
+          if [[ ! -f settings.gradle.kts || ! -f app/build.gradle.kts ]]; then
+            echo "::error::Android project build files are missing."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$PROJECT_FILE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          if [[ -d app/scr/main && ! -d app/src/main ]]; then
+            mkdir -p app/src
+            mv app/scr/main app/src/main
+          fi
 
-      - name: Generate Gradle wrapper
-        run: |
-          cd "$PROJECT_DIR"
-          gradle wrapper --gradle-version 8.9
+          if [[ -d app/scr/Test/Java && ! -d app/src/test/java ]]; then
+            mkdir -p app/src/test
+            mv app/scr/Test/Java app/src/test/java
+          fi
+
+          if [[ -d app/src/main/Res ]]; then
+            mv app/src/main/Res app/src/main/res
+          fi
+
+          if [[ -d app/src/main/res/Values ]]; then
+            mv app/src/main/res/Values app/src/main/res/values
+          fi
+
+          if [[ ! -f app/src/main/AndroidManifest.xml ]]; then
+            echo "::error::AndroidManifest.xml is missing."
+            exit 1
+          fi
 
       - name: Build debug APK
-        run: |
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug
+        run: gradle --no-daemon assembleDebug
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: EditPro-debug-APK
-          path: /tmp/editpro/**/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
           
