@@ -1,0 +1,50 @@
+
+name: Build EditPro APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'EditProAndroid_Native_Kotlin_Project.zip'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get project files
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract native project
+        run: |
+          mkdir -p /tmp/editpro
+          unzip -q EditProAndroid_Native_Kotlin_Project.zip -d /tmp/editpro
+          GRADLEW=$(find /tmp/editpro -type f -name gradlew -print -quit)
+          if [ -z "$GRADLEW" ]; then
+            echo "No Gradle wrapper found in ZIP"
+            exit 1
+          fi
+          cd "$(dirname "$GRADLEW")"
+          chmod +x gradlew
+          echo "PROJECT_DIR=$PWD" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        run: cd "$PROJECT_DIR" && ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EditPro-debug-APK
+          path: /tmp/editpro/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
